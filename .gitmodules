@@ -1,0 +1,30 @@
+[submodule "legacy/electron-electron-main"]
+	path = legacy/electron-electron-main
+	url = git@github.com:electron/electron.git
+[submodule "legacy/electron-electron-v7.3.3"]
+	path = legacy/electron-electron-v7.3.3
+	url = git@github.com:electron/electron.git
+[submodule "legacy/ymmuse-electron-builder-master"]
+	path = legacy/ymmuse-electron-builder-master
+	url = git@github.com:ymmuse/electron-builder.git
+[submodule "legacy/ymmuse-electron-libcc-dev-ymmuse"]
+	path = legacy/ymmuse-electron-libcc-dev-ymmuse
+	url = git@github.com:ymmuse/electron-libcc.git
+[submodule "legacy/ymmuse-electron-libcc-ffmpeg-feature-electron-avi"]
+	path = legacy/ymmuse-electron-libcc-ffmpeg-feature-electron-avi
+	url = git@github.com:ymmuse/electron-libcc-ffmpeg.git
+[submodule "legacy/ymmuse-electron-dev-ymmuse"]
+	path = legacy/ymmuse-electron-dev-ymmuse
+	url = git@github.com:ymmuse/electron.git
+[submodule "legacy/ymmuse-electron-ci-develop/electron"]
+	path = legacy/ymmuse-electron-ci-develop/electron
+	url = git@github.com:electron/electron.git
+[submodule "legacy/ymmuse-electron-ci-develop/vendor/pyyaml"]
+	path = legacy/ymmuse-electron-ci-develop/vendor/pyyaml
+	url = git@github.com:yaml/pyyaml.git
+[submodule "legacy/ymmuse-electron-ci-develop"]
+	path = legacy/ymmuse-electron-ci-develop
+	url = https://github.com/ymmuse/electron-ci.git
+[submodule "legacy/bilibili-ijkplayer-master"]
+	path = legacy/bilibili-ijkplayer-master
+	url = https://github.com/Bilibili/ijkplayer.git
