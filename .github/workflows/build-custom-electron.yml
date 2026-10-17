@@ -5,10 +5,12 @@
 #            -> copy work copy (electron/)
 #            -> apply patches (empty for now) + edit build args (placeholder)
 #   build.py -> bootstrap --build_release_libcc -> electron build -> create-dist
-# Multi-platform: three runners (linux/windows/macos) run IN PARALLEL via matrix.
+# Multi-platform: runners run IN PARALLEL via matrix.
+# macos-13 runner was fully retired by GitHub on 2025-12-04; macOS build is
+# paused until milestone 1 (official electron v1.8.4 through our ci) is green.
 # Electron cannot cross-compile: each platform's dist must be produced by its
-# own native runner. Each runner commits ITS OWN artifacts back to the repo
-# (dist/<platform>/), not a PR, not an artifact upload.
+# own native runner. Each runner publishes ITS OWN artifacts to GitHub Releases
+# (tag per platform + run), not into git history, not a PR.
 # No automatic triggers; workflow_dispatch (manual) only.
 
 name: Build custom electron (electron-ci, multi-platform)
@@ -28,9 +30,6 @@ jobs:
           - platform: windows
             os: windows-2022
             python: C:/Python27/python.exe
-          - platform: macos
-            os: macos-13
-            python: python2
     runs-on: ${{ matrix.os }}
     env:
       TARGET_ARCH: x64
@@ -44,15 +43,6 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y python2
-          python2 --version
-
-      - name: Setup Python 2.7 (macos)
-        if: matrix.platform == 'macos'
-        shell: bash
-        run: |
-          curl -L -o /tmp/python2.pkg https://www.python.org/ftp/python/2.7.18/python-2.7.18-macosx10.9.pkg
-          sudo installer -pkg /tmp/python2.pkg -target /
-          sudo ln -sf /Library/Frameworks/Python.framework/Versions/2.7/bin/python2.7 /usr/local/bin/python2
           python2 --version
 
       - name: Setup Python 2.7 (windows)
@@ -74,27 +64,25 @@ jobs:
         run: |
           "${{ matrix.python }}" legacy/electron-ci/build.py --target-arch "$TARGET_ARCH"
 
-      - name: Commit platform artifacts
+      - name: Publish to GitHub Releases
         shell: bash
         run: |
           set -e
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           SRC="legacy/electron-ci/electron/dist"
           if [ ! -d "$SRC" ]; then
-            echo "no dist produced, skip commit"
+            echo "no dist produced, skip publish"
             exit 0
           fi
-          mkdir -p "dist/${{ matrix.platform }}"
-          cp -r "$SRC/." "dist/${{ matrix.platform }}/"
-          git add "dist/${{ matrix.platform }}"
-          git commit -m "build(electron): ${{ matrix.platform }} dist artifacts (x64)"
-          for i in 1 2 3 4 5; do
-            if git pull --rebase origin "$GITHUB_REF_NAME" 2>/dev/null && git push origin "HEAD:$GITHUB_REF_NAME" 2>/dev/null; then
-              echo "artifacts pushed"
-              exit 0
-            fi
-            sleep 15
-          done
-          echo "push failed after retries"
-          exit 1
+          FILES=$(find "$SRC" -maxdepth 1 -type f \( -name "*.zip" -o -name "*.tar.*" -o -name "*.dmg" -o -name "*.pkg" -o -name "*.exe" -o -name "*.msi" \) || true)
+          if [ -z "$FILES" ]; then
+            echo "no archive files under dist, skip publish"
+            exit 0
+          fi
+          TAG="electron-1.8.4-${{ matrix.platform }}-${{ github.run_id }}"
+          gh release create "$TAG" \
+            --title "electron 1.8.4 ${{ matrix.platform }} (run ${{ github.run_id }})" \
+            --notes "Milestone 1: official electron v1.8.4 baseline built via electron-ci on ${{ matrix.platform }} (x64)."
+          gh release upload "$TAG" $FILES
+          echo "published to release $TAG"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
