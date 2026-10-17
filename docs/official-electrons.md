@@ -26,6 +26,33 @@
 
 来源：DEPS（main/v7.3.3）、官方 release 页 v1.8.4/v7.3.3、electron-vs-official.md（6fc819dae 内核取自 libcc VERSION）。
 
+## 二点五、受 `piotrbulinski/boto` 删仓影响的版本区间（2026-10-18 实证）
+
+背景：electron 1.x–3.x 的 `vendor/libchromiumcontent` 子模块内部又登记了
+`vendor/boto` 子模块；其中一段时期的 URL 指向 `piotrbulinski/boto.git`，
+该仓库现已被 GitHub 删除 → 递归子模块初始化 clone 失败
+（本项目 CI 实测：v1.8.4 全量迁出失败）。
+
+扫描方法：本地 vendored electron（全量 tag 120 个含 libchromiumcontent）逐 tag
+取 libcc gitlink sha → 在 electron/libchromiumcontent 全量历史中 `git show <sha>:.gitmodules`
+读取 boto URL（本表逐一实证，非推断）。
+
+| 区间 | libcc 内 boto URL | 受影响 |
+| --- | --- | --- |
+| v1.7.x 及更早（v1.7.1–v1.7.16 实证） | `https://github.com/boto/boto`（官方） | **否** |
+| v1.8.0 / v1.8.1 / v1.8.2-beta.1 | 官方 boto/boto | **否** |
+| **v1.8.2-beta.2 起（1-8-x 全线：v1.8.2 正式 ~ v1.8.8）** | **`https://github.com/piotrbulinski/boto.git`（已删除）** | **是** |
+| **v2.0.x 全系（beta.1 ~ v2.0.18，含 2.1.0-unsupported）** | **piotrbulinski/boto.git（已删除）** | **是** |
+| **v3.0.x / v3.1.x 全系（beta ~ 正式）** | **piotrbulinski/boto.git（已删除）** | **是** |
+| **v4.0.0-nightly.20180816 ~ 20180905（早期 4.0 nightly 仍带 libcc）** | **piotrbulinski/boto.git（已删除）** | **是** |
+| v4.0.0 正式版（`f2d1e5fa`）及之后 | 无 libcc 子模块（chromium 经 DEPS/gclient；根 .gitmodules 的 boto = 官方 boto/boto） | **否** |
+
+结论：
+- **受影响窗口 = v1.8.2-beta.2 → v3.1.13（含 v4.0.0 早期 nightly 2018-08~09）**；
+- **本项目 electron-ci 基线切 v4.0.0 正式版（`f2d1e5fa`）即完全脱离受影响窗口**；
+- 若日后需编译 v1.8.2-beta.2 ~ v3.1.x 区间版本，必须先把 libcc 的 boto URL
+  重定向到可用仓库（如官方 boto/boto 或自建镜像）再迁出。
+
 ## 三、按时间顺序排序（含 v2.0.0）
 
 按提交时间先后排列；**官方正式版本之间不标注提交差**，仅对项目引用的两个对象
