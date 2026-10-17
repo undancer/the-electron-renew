@@ -1,0 +1,14 @@
+# 本文件在根 .gitignore 基础上新增的补充规则（层级叠加，不覆盖根规则）
+
+# 远程获取的代码目录（fetch-sources.py 下载产物，不入库）。
+# vendors/ 整体为脚本下载区（electron / pyyaml / libcc 及未来追加的第三方源），
+# 整体忽略后：追加第三方仓库只需在 init-sources.py 清单加一行，无需改动本文件；
+# 同时覆盖 fetch-sources.py 解压临时目录（vendors/.*-extract/）。
+vendors/
+
+# 工作副本（init.py 从 vendors/electron 复制到 ci 根目录下 electron/，
+# 应用补丁/改参数/编译都在这，不入库）。
+electron/
+
+# 下载缓存（fetch-sources.py 复用，含 .part 下载中断残留）
+.cache/
