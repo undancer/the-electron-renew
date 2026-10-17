@@ -7,7 +7,9 @@
 
 获取方式：**git 迁出指定版本（全量克隆，与 bilibili/ijkplayer 的
 pull-repo-base.sh 一致——git clone 即全量历史，工作树 checkout 到目标版本）**——
-  git clone {url} {target} → git checkout {commit}（锁定该版本）
+  git clone {url} {target} → git checkout {ref}（锁定该版本；ref 可为
+    commit sha / tag / 分支名，**推荐用 tag**，如 v4.0.0，可读且随全量
+    clone 自带；sha 更严格但不可读）
   → git submodule update --init --recursive
     （保留仓库子模块机制，子模块按其 .gitmodules 锁定的版本就位；
     无子模块的仓库该命令安静成功）
@@ -29,11 +31,12 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 VENDORS = os.path.join(ROOT, 'vendors')
 
 
-def fetch_sources(url, commit, name):
+def fetch_sources(url, ref, name):
     """git 迁出指定版本到 vendors/<name>（已存在则跳过，幂等）。
 
     全量克隆（与 bilibili/ijkplayer 的 pull-repo-base.sh 一致），
-    工作树 checkout 锁定 commit。vendors/ 不存在时先创建。"""
+    工作树 checkout 锁定 ref（commit sha / tag / 分支名均可）。
+    vendors/ 不存在时先创建。"""
     if not os.path.isdir(VENDORS):
         os.makedirs(VENDORS)
     target = os.path.join(VENDORS, name)
@@ -44,7 +47,7 @@ def fetch_sources(url, commit, name):
         return
     print('git cloning %s' % url)
     subprocess.check_call(['git', 'clone', url, target])
-    subprocess.check_call(['git', '-C', target, 'checkout', commit])
+    subprocess.check_call(['git', '-C', target, 'checkout', ref])
     print('git submodule update --init --recursive (%s)' % name)
     subprocess.check_call(['git', '-C', target, 'submodule', 'update',
                            '--init', '--recursive'])
@@ -58,10 +61,10 @@ def main():
     parser = argparse.ArgumentParser(
         description='Fetch a repo source into vendors/<name> (git checkout mode)')
     parser.add_argument('url', help='Git repo url, e.g. https://github.com/electron/electron')
-    parser.add_argument('commit', help='Full commit SHA (pin version)')
+    parser.add_argument('ref', help='Ref to check out (commit sha / tag / branch), e.g. v4.0.0')
     parser.add_argument('name', help='Target dir name under vendors/')
     args = parser.parse_args()
-    fetch_sources(args.url, args.commit, args.name)
+    fetch_sources(args.url, args.ref, args.name)
     print('fetch %s done.' % args.name)
     return 0
 

@@ -23,7 +23,7 @@ def pull(url, commit, name):
 
 
 def main():
-    # 官方 electron（commit f2d1e5fa = v4.0.0）
+    # 官方 electron（锁定 tag v4.0.0 = commit f2d1e5fa9e72397e74222ee37e94d08ecd1e82ef）
     # —— 基线说明：v1.8.4（蓝本 electron-ci 子模块指定版本）依赖的
     #    vendor/libchromiumcontent 内部引用的 piotrbulinski/boto 已被 GitHub
     #    删除，递归子模块初始化失败；v4.0.0 起 electron 不再使用
@@ -32,7 +32,7 @@ def main():
     #    git 迁出保留仓库子模块机制：递归 update 自动就位 .gitmodules 中
     #    锁定的版本，无需手动复制。
     pull('https://github.com/electron/electron',
-         'f2d1e5fa9e72397e74222ee37e94d08ecd1e82ef', 'electron')
+         'v4.0.0', 'electron')
 
     # 注：yaml/pyyaml 目前**不迁出**——electron 默认编译链不需要；
     #     补丁解析（patches.py）对 yaml 为惰性引入，待需要补丁时再按需追加。

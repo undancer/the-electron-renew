@@ -43,12 +43,12 @@ ELECTRON_BASE = os.path.join(VENDORS, 'electron')
 # 工作副本：ci 根目录下 electron/（所有修改/编译都在这）
 ELECTRON_WORK = os.path.join(ROOT, 'electron')
 
-# electron 锁定 commit（官方 f2d1e5fa = v4.0.0）。
+# electron 锁定版本（官方 tag v4.0.0 = commit f2d1e5fa9e72397e74222ee37e94d08ecd1e82ef）。
 # 说明：v1.8.4 依赖的 vendor/libchromiumcontent 内部引用的
 # piotrbulinski/boto 仓库已被 GitHub 删除，递归子模块初始化会失败；
 # v4.0.0 起 electron 不再使用 libchromiumcontent（chromium 经 DEPS/gclient
 # 拉取），根 .gitmodules 仅 vendor/requests、vendor/boto（官方 boto/boto）。
-ELECTRON_COMMIT = 'f2d1e5fa9e72397e74222ee37e94d08ecd1e82ef'
+ELECTRON_TAG = 'v4.0.0'
 
 
 def run(argv, cwd=None):
@@ -70,7 +70,7 @@ def copy_to_work():
         print('electron/ already at %s' % ELECTRON_WORK)
         return
     shutil.copytree(ELECTRON_BASE, ELECTRON_WORK)
-    run(['git', '-C', ELECTRON_WORK, 'checkout', ELECTRON_COMMIT])
+    run(['git', '-C', ELECTRON_WORK, 'checkout', ELECTRON_TAG])
     print('electron/ copy done (base untouched)')
 
 
