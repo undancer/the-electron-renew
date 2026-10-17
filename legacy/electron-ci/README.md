@@ -4,17 +4,26 @@
 当前里程碑①：让**官方 electron v4.0.0 基线**通过本项目编译链完整打包
 （产物进 GitHub Releases，不入 git）。
 
+**定位（2026-10-18 二版架构）**：本项目只是 **electron 官方构建工具链
+（depot_tools / gclient / gn / ninja）的薄封装**——实际编译必须使用
+electron 官方工具链本身，用 python 写只是图方便，不实现任何构建逻辑。
+
 > 基线说明：蓝本 electron-ci 原指定官方 v1.8.4（`9dfb85dd`），其依赖的
 > `vendor/libchromiumcontent` 内部引用的 `piotrbulinski/boto` 已被 GitHub
 > 删除，递归子模块初始化失败；v4.0.0 起 electron 不再使用
 > libchromiumcontent（chromium 经 DEPS/gclient 拉取），根 `.gitmodules`
 > 仅 `vendor/requests`、`vendor/boto`（官方 `boto/boto`），不受影响——
-> 因此本项目基线定为 v4.0.0（commit `f2d1e5fa`）。
+> 因此本项目基线定为 v4.0.0。
+>
+> 版本锚定：`v4.0.0` 是 annotated tag（tag 对象 `f2d1e5fa9…`），指向真实
+> commit `005264ca1f92…`（"Bump v4.0.0"，2018-12-20，Chromium
+> 69.0.3497.106 / Node 10.11.0）。gclient 锁定用 commit sha。
 
 ## Python 版本（重要）
 
 - 蓝本脚本为 **python2** 时代产物（`print '...'` 语句等，python3 直接语法错误）；
-- electron 源码内的 2018 构建脚本同样依赖 **python2**；
+- electron 源码内的 2018 构建脚本同样依赖 **python2**（DEPS hooks 调
+  `python` 执行 `apply_all_patches.py` 等，均为 py2 脚本）；
 - **uv 不支持 python2**（实测 `uv python install 2.7` / `3.7` 均报 No download
   found，仅支持 3.8+），因此本项目**不使用 uv**，由 GitHub Actions 安装
   python2 全程驱动；
@@ -23,118 +32,97 @@
 
 ## 本项目约束（脚本规范）
 
-- **所有 py 脚本一律使用 `.py` 扩展名**（含无参数入口脚本，如 `apply-patches.py`）；
+- **所有 py 脚本一律使用 `.py` 扩展名**；
 - **含有 `main()` 的 py 脚本，第一行必须有 shebang 启动注释**
   （本项目为 python2，统一写 `#!/usr/bin/env python2`，避免系统默认
   python3 误用），确保可直接执行；py2 下含非 ASCII 内容须同时声明
   `# -*- coding: utf-8 -*-`；
-- 纯被导入的模块（如 `git.py`、`patches.py`）不要求 shebang，但须为
-  `.py` 扩展名。
+- 纯被导入的模块不要求 shebang，但须为 `.py` 扩展名。
 
-## 源码获取（git 迁出指定版本，不使用 git 子模块链接登记）
+## 构建体系（v4.0.0 = GN/gclient，官方文档 build-instructions-gn.md）
 
-参考 bilibili/ijkplayer 的做法，本项目**不把源码登记为 git 子模块**，
-而是由脚本 **git 迁出**（clone → checkout 锁定 commit → 递归子模块）
-到指定位置：
+**v4.0.0 的 electron 仓库 `script/` 下没有 `bootstrap.py` / `build.py` /
+`create-dist.py`**（本地实证）——v1.8.4 时代的 python 脚本链在 v4.0.0 已
+不存在，构建链路为：
 
-1. **`scripts/fetch-sources.py`（通用拉取器，仿 `pull-repo-base.sh`）**：
-   `python fetch-sources.py <url> <commit> <name>` 一次拉取一个仓库源码到
-   `vendors/<name>/`——**git clone + checkout 指定 commit + `git submodule
-   update --init --recursive`**（保留仓库自身子模块机制，子模块按其
-   `.gitmodules` 锁定的版本就位）；
-   `scripts/init-sources.py`（清单，仿 `init-android.sh`）逐行调用它拉取
-   全部所需源码，**追加第三方仓库只需在 `init-sources.py` 按行加一条
-   `pull(...)`，不改拉取器本身**；
-2. **electron 用 git 迁出官方 `f2d1e5fa`（= v4.0.0）**：递归子模块自动
-   就位根 `.gitmodules` 锁定的 `vendor/requests`、`vendor/boto`
-   （官方 `boto/boto`）——无需手动复制。
+```
+# 1. init.py（前置准备，官方 hooks 自动完成补丁/npm/外部二进制）
+depot_tools/gclient.py config --name src/electron --unmanaged https://github.com/electron/electron
+depot_tools/gclient.py sync --with_branch_heads --with_tags --revision src/electron@005264ca1f...
+   ├─ 拉取 chromium（~30GB）/ node / buildtools（原样不动）
+   ├─ hook: apply_all_patches.py      （应用官方 patches，patches 机制 v4.0.0 起存在）
+   ├─ hook: update-external-binaries.py（下载 electron-frameworks 外部二进制）
+   └─ hook: npm install               （electron 的 npm 依赖）
 
-源码均经 git 迁出（electron 官方），产物 git 忽略不入库；构建不依赖任何
-git 子模块接线（源码内 `.gitmodules` 定义文件不删除、不修改）。
+# 2. build.py（编译，只调官方命令）
+cd gn-workspace/src
+gn gen out/Release --args=import("//electron/build/args/release.gn")
+ninja -C out/Release electron
+# 产物：gn-workspace/src/out/Release/electron（linux）/ electron.exe（windows）
+```
 
 ## 入口分工（init.py 准备，build.py 编译）
 
-- **`init.py`（根目录，python2）**：完成编译前全部前置，顺序固定——
-  1) **下载源码**（调 `scripts/init-sources.py` 清单，git 迁出 electron）；
-  2) **复制工作副本**（`vendors/electron` 整体复制为 ci 根目录下 `electron/`，
-     含 `.git` 与已就位子模块；base 保持原样，后续修改都在副本上）；
-  3) **应用补丁**（调 `scripts/apply-patches.py`，ci 自己的 py 逻辑读
-     `patches/common/*/.patches.yaml` 定义的补丁并 git apply——**细节由
-     补丁机制自己完成，外部不关心**）；
-  4) **编辑编译参数**（**预留点位**——具体参数内容待定，仅保留动作位置，
-     不预设任何参数）；
-- **`build.py`（根目录，python2）**：**只负责编译链**（bootstrap → build →
-  dist），不下载、不操作任何 git 子模块。
-
-## 源码接线
-
-| 角色 | 位置 | 获取方式 |
-| --- | --- | --- |
-| electron 源码（构建主体） | `vendors/electron/` | `init-sources.py` 清单调 `fetch-sources.py` git 迁出官方 f2d1e5fa（v4.0.0，递归子模块 requests/boto，git 忽略） |
-| 官方 boto / requests | `vendors/electron/vendor/boto`、`vendor/requests` | electron 递归子模块（官方 boto/boto、kennethreitz/requests，按 electron .gitmodules 锁定版本） |
-| 遗留参考源码 | `../ymmuse-electron-libcc-ffmpeg-feature-electron-avi` | 遗留目录，仅供阅读参考（不参与构建） |
-
-## 构建链
-
-```
-# 1. 前置准备（下载源码 → 复制工作副本 → 应用补丁 → 编辑编译参数，顺序固定）
-python legacy/electron-ci/init.py
-# 2. 编译（build.py 只负责编译链）
-python legacy/electron-ci/build.py --target-arch x64
-  ├─ 1. electron/script/bootstrap.py --target_arch=x64 -v   （官方脚本，DEPS/gclient 就位依赖）
-  ├─ 2. electron/script/build.py -c R
-  └─ 3. electron/script/create-dist.py                       （产物在 electron/dist）
-```
-
-## 补丁机制（重要）
-
-- **应用补丁 = ci 自己的 py 逻辑**（`scripts/apply-patches.py` 读
-  `patches/common/*/.patches.yaml` 定义的补丁并 git apply，细节由补丁机制
-  自己完成，外部不关心）；`patches/` 下定义的补丁即全部补丁来源；
-- 当前 `patches/` 已**清空为占位**（尚未开始应用任何补丁）；
-- `.patches.yaml` 的 `repo` 为相对 electron-ci 根的目标路径。
-- 依赖：`apply-patches.py` / `patches.py` 需要 **pyyaml**，由 `vendors/pyyaml`
-  提供（`patches.py` 自动把 `vendors/pyyaml/lib` 加入 `sys.path`；
-  经 `fetch-sources.py` git 迁出 yaml/pyyaml b6cbfeec，git 忽略——
-  当前暂未迁出，补丁机制为惰性引入，待需要补丁时按需追加）。
+- **`init.py`（python2）**：① clone depot_tools 到 `depot_tools/` 并前置
+  PATH → ② `gclient config`（工作区 `gn-workspace/`，electron 落
+  `src/electron`）→ ③ `gclient sync`（锁定 v4.0.0 commit，官方 hooks
+  自动执行：应用官方 patches、npm install、外部二进制下载）；
+  另有防御检查：`python` 必须解析到 python2（DEPS hooks 是 py2 脚本）。
+- **`build.py`（python2）**：**只调官方命令**——`gn gen` → `ninja`，
+  不实现任何构建逻辑，不下载、不操作任何子模块。
 
 ## 目录结构
 
 ```
 legacy/electron-ci/
-├─ init.py                 # 入口：下载源码 → 复制工作副本 → 应用补丁 → 编辑编译参数（含 main，python2）
-├─ build.py                # 编译驱动：bootstrap → build → dist（含 main，python2；只负责编译链）
-├─ clean.py                # 清理远程源码目录（含 main，python2）
-├─ vendors/                # 第三方源码（复数规范，git 迁出产物）
-│  └─ electron/            #   git 迁出官方 f2d1e5fa（v4.0.0；递归子模块 requests/boto；git 忽略）
-├─ scripts/                # 构建脚本（全部 .py 扩展名，复数规范）
-│  ├─ init-sources.py      #   源码清单（仿 init-android.sh：逐行调 fetch-sources.py 拉全部，含 main）
-│  ├─ fetch-sources.py     #   通用拉取器（仿 pull-repo-base.sh：git clone+checkout+递归子模块，含 main）
-│  ├─ apply-patches.py     #   补丁应用入口（ci 自己的 py 逻辑；含 main，shebang 启动）
-│  ├─ patches.py           #   补丁列表解析（模块，无 main）
-│  └─ git.py               #   git apply 封装（模块，无 main）
-├─ patches/                # 补丁集（ci 自定义的全部补丁来源，当前已清空为占位）
+├─ init.py                 # 入口（python2）：depot_tools → gclient config → gclient sync（含 main）
+├─ build.py                # 编译驱动（python2）：gn gen → ninja（含 main，只调官方命令）
+├─ clean.py                # 清理脚本（python2，旧版保留）
+├─ depot_tools/            # gclient 宿主工具集（init.py clone，git 忽略，不入库）
+├─ gn-workspace/           # gclient 工作区（git 忽略，CI 每次全新生成）
+│  ├─ .gclient
+│  └─ src/
+│     ├─ electron/         # electron v4.0.0（--name src/electron；官方 patches 已应用）
+│     └─ ...               # chromium 源码、node、buildtools（gclient 拉取，原样不动）
+├─ vendors/                # 【deprecated】旧 ijkplayer 式下载区（仅本地考证用，git 忽略）
+├─ electron/               # 【deprecated】旧工作副本（本地考证用，git 忽略）
+├─ scripts/                # 【deprecated】旧脚本（init-sources/fetch-sources/
+│                          #   apply-patches/patches/git），不再被调用，保留供参考
+├─ patches/                # 补丁集（当前已清空为占位；官方 patches 由 DEPS hooks
+│                          #   自动应用，本项目自定义补丁后续在此追加）
 └─ README.md
 ```
+
+## 补丁机制（重要）
+
+- **官方 patches**：v4.0.0 的构建体系里，官方补丁由 gclient 的 DEPS hook
+  `apply_all_patches.py` **自动应用**（`patches/common/config.json` 定义
+  各补丁目标目录）——这不是我们实现的，是官方工具链自带行为；
+- **本项目自定义补丁**：后续里程碑在 `patches/` 下追加（当前已清空为占位）；
+  应用方式待定（可复用官方 `git-import-patches` 机制或自定义 py 逻辑），
+  顺序由 init.py 控制；
+- 旧的 ijkplayer 式补丁机制（`scripts/apply-patches.py` + `.patches.yaml`）
+  在 v4.0.0 下不再使用（deprecated，文件保留供参考）。
 
 ## 用法
 
 ```sh
 # python2 运行（Actions 亦同）
-python legacy/electron-ci/init.py                          # 前置：下载源码 → 复制副本 → 应用补丁 → 编辑编译参数
-python legacy/electron-ci/build.py --target-arch x64        # 编译
-
-# 通用拉取器：一次拉一个仓库（仿 pull-repo-base.sh，由 init-sources.py 调用）
-python legacy/electron-ci/scripts/fetch-sources.py <url> <commit> <name>
+python legacy/electron-ci/init.py                          # 前置：depot_tools + gclient sync（锁定 v4.0.0）
+python legacy/electron-ci/build.py --target-arch x64        # 编译：gn gen + ninja
 ```
 
 ## 注意（2026 环境下重建 2018 编译的现实约束）
 
-- **磁盘**：git 迁出 electron 全历史 + 递归子模块体积较大，v4.0.0
-  源码树（chromium 经 DEPS/gclient 拉取）约 20–30 GB，Actions runner
-  空间紧张；
-- **工具链**：2018 构建基于 xcode9 / python2，现代 runner（xcode 15+）
-  大概率需要适配（clang/SDK 层面报错需逐一处理）；
+- **磁盘（硬约束）**：GitHub 标准 runner 仅 **14GB**，chromium 源码约
+  **30GB**、编译产物另需 20–60GB——**标准 runner 放不下**（gclient sync
+  必然磁盘不足失败）；需换 **larger runner（150GB，付费）** 才能完整编译；
+- **python2 前置**：DEPS hooks 调 `python`（py2 脚本），CI 必须让 python2
+  优先（linux: `/usr/local/bin/python` shim；windows: `C:/Python27` 前置）；
+- **Windows 工具链**：v4.0.0（2018）要求 VS2017，windows-2022（VS2022）
+  大概率不识别（chromium 69 vs_toolchain）；必须设
+  `DEPOT_TOOLS_WIN_TOOLCHAIN=0`（depot_tools 不得下载 Google 内部 VS）；
 - **时长**：全量编译可能接近或超过 GitHub Actions 6 小时上限；
-- 产物为完整 electron dist，可进一步组装为 `@chiflix/electron` 风格的
-  npm 包。
+- 产物为 `src/out/Release/electron(.exe)` 可执行文件（v4.0.0 无 zip dist，
+  dist 组装在官方 release 流程），可进一步组装为 `@chiflix/electron`
+  风格的 npm 包。

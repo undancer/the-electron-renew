@@ -1,17 +1,18 @@
 # Build official electron (v4.0.0 baseline) through our electron-ci pipeline.
-# Driven by legacy/electron-ci (python2, blueprint: ymmuse/electron-ci).
-# Pipeline:
-#   init.py  -> fetch sources (vendors/, full clone + submodules + LFS)
-#            -> copy work copy (electron/)
-#            -> apply patches (empty for now) + edit build args (placeholder)
-#   build.py -> bootstrap --build_release_libcc -> electron build -> create-dist
-# Multi-platform: runners run IN PARALLEL via matrix.
+# electron-ci is a thin wrapper over electron's OWN toolchain:
+#   init.py  -> depot_tools + gclient config + gclient sync
+#               (locks v4.0.0; DEPS hooks auto-apply official patches,
+#                npm install, external binaries download)
+#   build.py -> gn gen + ninja -C out/Release electron
+# Output: gn-workspace/src/out/Release/electron(.exe) -> GitHub Releases
+# (never committed into git). Multi-platform matrix runs in parallel.
 # macos-13 runner was fully retired by GitHub on 2025-12-04; macOS build is
 # paused until milestone 1 (official electron v4.0.0 through our ci) is green.
-# Electron cannot cross-compile: each platform's dist must be produced by its
-# own native runner. Each runner publishes ITS OWN artifacts to GitHub Releases
-# (tag per platform + run), not into git history, not a PR.
 # No automatic triggers; workflow_dispatch (manual) only.
+#
+# NOTE: standard runners have only 14GB disk; chromium source alone (~30GB)
+# will NOT fit. This pass is a script-chain validation: init is expected to
+# fail at disk capacity. Switch to larger runners (150GB) once confirmed.
 
 name: Build custom electron (electron-ci, multi-platform)
 
@@ -33,6 +34,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       TARGET_ARCH: x64
+      # v4.0.0-era chromium needs a local Visual Studio; depot_tools must not
+      # try to download the Google-internal toolchain (no access).
+      DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,6 +48,9 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y python2
           python2 --version
+          # DEPS hooks call `python`; make it resolve to python2 (v4.0.0-era scripts)
+          sudo ln -sf /usr/bin/python2 /usr/local/bin/python
+          python --version
 
       - name: Setup Python 2.7 (windows)
         if: matrix.platform == 'windows'
@@ -51,38 +58,50 @@ jobs:
         run: |
           curl.exe -L -o "$env:TEMP\python2.msi" https://www.python.org/ftp/python/2.7.18/python-2.7.18.amd64.msi
           Start-Process msiexec.exe -ArgumentList "/i `"$env:TEMP\python2.msi`" /qn TARGETDIR=C:\Python27" -Wait
-          "C:\Python27" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
-          & "C:\Python27\python.exe" --version
+          "C:\Python27\python.exe" --version
 
-      - name: Init (fetch sources + work copy)
+      - name: Init (gclient: fetch sources + official patches)
         shell: bash
         run: |
+          # python2 first in PATH: gclient's DEPS hooks are v4.0.0-era python2 scripts
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            export PATH="/c/Python27:$PATH"
+          else
+            export PATH="/usr/local/bin:$PATH"
+          fi
+          python --version
           "${{ matrix.python }}" legacy/electron-ci/init.py
 
-      - name: Build custom electron
+      - name: Build custom electron (gn + ninja)
         shell: bash
         run: |
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            export PATH="/c/Python27:$PATH"
+          else
+            export PATH="/usr/local/bin:$PATH"
+          fi
           "${{ matrix.python }}" legacy/electron-ci/build.py --target-arch "$TARGET_ARCH"
 
       - name: Publish to GitHub Releases
         shell: bash
         run: |
           set -e
-          SRC="legacy/electron-ci/electron/dist"
+          SRC="legacy/electron-ci/gn-workspace/src/out/Release"
           if [ ! -d "$SRC" ]; then
-            echo "no dist produced, skip publish"
+            echo "no build output, skip publish"
             exit 0
           fi
-          FILES=$(find "$SRC" -maxdepth 1 -type f \( -name "*.zip" -o -name "*.tar.*" -o -name "*.dmg" -o -name "*.pkg" -o -name "*.exe" -o -name "*.msi" \) || true)
-          if [ -z "$FILES" ]; then
-            echo "no archive files under dist, skip publish"
+          BIN="electron"
+          [ "${{ matrix.platform }}" = "windows" ] && BIN="electron.exe"
+          if [ ! -f "$SRC/$BIN" ]; then
+            echo "no $BIN produced, skip publish"
             exit 0
           fi
           TAG="electron-4.0.0-${{ matrix.platform }}-${{ github.run_id }}"
           gh release create "$TAG" \
             --title "electron 4.0.0 ${{ matrix.platform }} (run ${{ github.run_id }})" \
             --notes "Milestone 1: official electron v4.0.0 baseline built via electron-ci on ${{ matrix.platform }} (x64)."
-          gh release upload "$TAG" $FILES
+          gh release upload "$TAG" "$SRC/$BIN"
           echo "published to release $TAG"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

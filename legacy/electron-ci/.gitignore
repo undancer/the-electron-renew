@@ -12,3 +12,12 @@ electron/
 
 # 下载缓存（fetch-sources.py 复用，含 .part 下载中断残留）
 .cache/
+
+# gclient 工作区（init.py 生成，含 chromium 源码等巨量下载，不入库）
+gn-workspace/
+
+# depot_tools（init.py clone 的 gclient 宿主工具集，不入库）
+depot_tools/
+
+# python2 编译缓存
+*.pyc

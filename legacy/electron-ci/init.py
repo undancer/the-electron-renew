@@ -1,54 +1,46 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
-"""electron-ci 入口：完成编译所需全部前置（仿 bilibili/ijkplayer 原则）。
+"""electron-ci init：驱动 electron 官方 gclient 工具链就位编译依赖。
 
-原则：第三方库**下载了就是下载了，不做任何修改**；要修改的地方，
-先**复制到工作副本再修改**（ijkplayer：pull-repo-base 只下载 base，
-pull-repo-ref 复制出工作副本，修改都在副本上）。目录结构不照搬，
-只遵循此原则。
+理念：ci 只是 electron 官方构建工具链（depot_tools / gclient / gn / ninja）
+的薄封装，用 python 写只是图方便，不实现任何构建逻辑。实际编译必须使用
+electron 官方工具链本身：
+  1) gclient sync 按 electron 仓库 DEPS 拉取 chromium / node / buildtools，
+     并自动执行官方 hooks：应用官方 patches（apply_all_patches.py）、
+     npm install、外部二进制下载；
+  2) gn gen + ninja 编译由 build.py 驱动（同样只调用官方命令）。
 
-对应落地：
-  vendors/  下载的第三方源码 base（git 迁出，原样不动，git 忽略）
-            ├─ electron/   官方 electron f2d1e5fa（递归子模块就位 requests/boto）
-            └─ pyyaml/     yaml/pyyaml b6cbfeec（补丁解析依赖）
-  electron/ ci 根目录下的工作副本（init.py 从 vendors/electron 复制而来，
-            应用补丁 / 改参数 / 编译都在这；git 忽略）
-            —— 位置与蓝本 electron-ci/electron/ 一致，
-               patches/*/.patches.yaml 的 repo 即蓝本原文（相对 electron-ci
-               根的目标路径）
+本脚本职责（顺序固定）：
+  1) 准备 depot_tools（不存在则 clone，并前置 PATH）
+  2) gclient config（工作区 gn-workspace，electron 落在 src/electron）
+  3) gclient sync（锁定 ELECTRON_REVISION，官方 hooks 自动执行）
 
-职责（顺序固定，与根目录 build.py 分工：init.py 准备，build.py 编译）：
-  1) 下载源码     —— scripts/init-sources.py 清单（git 迁出到 vendors/，原样）
-  2) 复制工作副本 —— vendors/electron 复制为 ci 根目录下的 electron/
-                     （--reference 克隆，复用 base 对象库；不改 base）
-  3) 应用补丁     —— scripts/apply-patches.py 在 **electron/ 副本**上应用
-                     patches/common/*/.patches.yaml 定义的补丁
-  4) 编辑编译参数 —— **预留点位**（具体参数内容待定，不预设任何参数）
+工作区（git 忽略，CI 每次全新生成）：
+  gn-workspace/            gclient 工作区
+    .gclient
+    src/
+      electron/            electron 锁定版本（--name src/electron，官方 patches 已应用）
+      ... chromium 源码、node、buildtools 等（gclient 拉取，原样不动）
 
-前置完成后由根目录 build.py 编译 **electron/**：
-  python legacy/electron-ci/build.py --target-arch x64
+用法：
+  python legacy/electron-ci/init.py [--revision <commit|tag>]
+默认锁定 v4.0.0（真实 commit 005264ca1f；annotated tag v4.0.0 指向它）。
 """
 
+import argparse
 import os
-import shutil
 import subprocess
 import sys
 
 ROOT = os.path.abspath(os.path.dirname(__file__))
-SCRIPTS = os.path.join(ROOT, 'scripts')
-VENDORS = os.path.join(ROOT, 'vendors')
+WORKSPACE = os.path.join(ROOT, 'gn-workspace')
+SRC = os.path.join(WORKSPACE, 'src')
+ELECTRON = os.path.join(SRC, 'electron')
 
-# base：vendors/electron（原样，只读）
-ELECTRON_BASE = os.path.join(VENDORS, 'electron')
-# 工作副本：ci 根目录下 electron/（所有修改/编译都在这）
-ELECTRON_WORK = os.path.join(ROOT, 'electron')
-
-# electron 锁定版本（官方 tag v4.0.0 = commit f2d1e5fa9e72397e74222ee37e94d08ecd1e82ef）。
-# 说明：v1.8.4 依赖的 vendor/libchromiumcontent 内部引用的
-# piotrbulinski/boto 仓库已被 GitHub 删除，递归子模块初始化会失败；
-# v4.0.0 起 electron 不再使用 libchromiumcontent（chromium 经 DEPS/gclient
-# 拉取），根 .gitmodules 仅 vendor/requests、vendor/boto（官方 boto/boto）。
-ELECTRON_TAG = 'v4.0.0'
+ELECTRON_URL = 'https://github.com/electron/electron'
+# v4.0.0 真实 commit：annotated tag `v4.0.0` -> commit 005264ca1f "Bump v4.0.0"
+# （f2d1e5fa 是 tag 对象本身，checkout 两者等价；此处锁定 commit 最稳）
+ELECTRON_REVISION = '005264ca1f92f920ff09c91c10a3d612ac94f1d7'
 
 
 def run(argv, cwd=None):
@@ -56,45 +48,87 @@ def run(argv, cwd=None):
     subprocess.check_call(argv, cwd=cwd)
 
 
-def download_sources():
-    """下载源码：init-sources.py 清单逐行 git 迁出（electron + pyyaml）到
-    vendors/，**原样不动**（base）。"""
-    run([sys.executable, os.path.join(SCRIPTS, 'init-sources.py')], cwd=ROOT)
+def find_executable(name):
+    """按 PATH 找可执行文件（py2.7 无 shutil.which，手动遍历）。"""
+    for d in os.environ.get('PATH', '').split(os.pathsep):
+        d = d.strip('"')
+        if not d:
+            continue
+        p = os.path.join(d, name)
+        if os.path.isfile(p):
+            return p
+    return None
 
 
-def copy_to_work():
-    """复制工作副本：把 vendors/electron（base）**整体复制**为 ci 根目录下
-    electron/（含 .git 与已就位子模块，工作树/子模块状态一并继承）。
-    base 保持原样，后续所有修改都在副本上进行。"""
-    if os.path.isdir(ELECTRON_WORK):
-        print('electron/ already at %s' % ELECTRON_WORK)
+def find_python3():
+    """定位 python3 解释器。gclient.py 是 python3 写的，不能用本进程(py2)跑。"""
+    for name in ('python3', 'python', 'py'):
+        p = find_executable(name)
+        if p:
+            return p
+    return None
+
+
+def ensure_depot_tools():
+    """准备 depot_tools：不存在则 clone；随后前置 PATH（gclient/gn/ninja 从这里取）。"""
+    depot = os.path.join(ROOT, 'depot_tools')
+    if not os.path.isdir(os.path.join(depot, '.git')):
+        run(['git', 'clone',
+             'https://chromium.googlesource.com/chromium/tools/depot_tools.git',
+             depot])
+    os.environ['PATH'] = depot + os.pathsep + os.environ.get('PATH', '')
+    return depot
+
+
+def gclient(depot, argv):
+    py3 = find_python3()
+    if py3 is None:
+        raise SystemExit('no python3 found in PATH (depot_tools/gclient.py needs python3)')
+    run([py3, os.path.join(depot, 'gclient.py')] + argv, cwd=WORKSPACE)
+
+
+def check_hook_python():
+    """防御检查：DEPS hooks（apply_all_patches.py 等）由 gclient 调 `python`，
+    这些是 v4.0.0 时代的 py2 脚本，`python` 必须解析到 python2。
+    workflow 的 Setup/Init 步骤负责把 python2 前置（linux: /usr/local/bin 的
+    shim；windows: C:/Python27 前置 PATH）。这里只做 fail-fast 检查。"""
+    py = find_executable('python')
+    if py is None:
+        print('WARNING: `python` not found in PATH (DEPS hooks may fail)')
         return
-    shutil.copytree(ELECTRON_BASE, ELECTRON_WORK)
-    run(['git', '-C', ELECTRON_WORK, 'checkout', ELECTRON_TAG])
-    print('electron/ copy done (base untouched)')
-
-
-def apply_patches():
-    """应用补丁：本项目 patches/common/ 下定义的补丁，作用在 **electron/
-    副本**上（.patches.yaml 的 repo 指向 electron/vendor/...，蓝本原文）。
-    需要 pyyaml（vendors/pyyaml，由 download_sources 拉取）。"""
-    run([sys.executable, os.path.join(SCRIPTS, 'apply-patches.py')], cwd=ROOT)
-
-
-def edit_build_args():
-    """编辑编译参数（**预留点位**）。
-
-    具体要编辑成什么样的编译参数尚未确定——此处仅预留动作位置，
-    待确认后填充实际编辑逻辑（不预设任何参数内容）。
-    """
-    print('edit build args: 预留点位（编译参数内容待定）')
+    try:
+        out = subprocess.check_output([py, '-c', 'import sys; print(sys.version_info[0])'])
+    except Exception:
+        print('WARNING: cannot probe `python` version')
+        return
+    if out.strip() != '2':
+        print('ERROR: `python` resolves to %s -> %s, but v4.0.0 DEPS hooks need python2'
+              % (py, out.strip()))
+        print('       fix PATH first (linux: ln -s /usr/bin/python2 /usr/local/bin/python;')
+        print('       windows: prepend C:/Python27 to PATH)')
+        raise SystemExit(2)
 
 
 def main():
-    download_sources()
-    copy_to_work()
-    apply_patches()
-    edit_build_args()
+    parser = argparse.ArgumentParser(description='Init electron build workspace (gclient)')
+    parser.add_argument('--revision', default=ELECTRON_REVISION,
+                        help='electron revision to lock (commit sha or tag)')
+    parser.add_argument('--clean', action='store_true',
+                        help='remove gn-workspace before init')
+    args = parser.parse_args()
+
+    if args.clean:
+        import shutil
+        if os.path.isdir(WORKSPACE):
+            shutil.rmtree(WORKSPACE)
+    if not os.path.isdir(WORKSPACE):
+        os.makedirs(WORKSPACE)
+
+    depot = ensure_depot_tools()
+    check_hook_python()
+    gclient(depot, ['config', '--name', 'src/electron', '--unmanaged', ELECTRON_URL])
+    gclient(depot, ['sync', '--with_branch_heads', '--with_tags',
+                    '--revision', 'src/electron@' + args.revision])
     print('init done. Run: python legacy/electron-ci/build.py --target-arch x64')
     return 0
 
