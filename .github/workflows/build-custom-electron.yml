@@ -5,49 +5,96 @@
 #            -> copy work copy (electron/)
 #            -> apply patches (empty for now) + edit build args (placeholder)
 #   build.py -> bootstrap --build_release_libcc -> electron build -> create-dist
+# Multi-platform: three runners (linux/windows/macos) run IN PARALLEL via matrix.
+# Electron cannot cross-compile: each platform's dist must be produced by its
+# own native runner. Each runner commits ITS OWN artifacts back to the repo
+# (dist/<platform>/), not a PR, not an artifact upload.
 # No automatic triggers; workflow_dispatch (manual) only.
-# Linux runner produces the Linux dist only (macOS needs macOS runner,
-# Windows needs Windows runner — no cross-build for those targets).
 
-name: Build custom electron (electron-ci, linux)
+name: Build custom electron (electron-ci, multi-platform)
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-22.04
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            os: ubuntu-22.04
+            python: python2
+          - platform: windows
+            os: windows-2022
+            python: C:/Python27/python.exe
+          - platform: macos
+            os: macos-13
+            python: python2
+    runs-on: ${{ matrix.os }}
     env:
       TARGET_ARCH: x64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python 2.7
+      - name: Setup Python 2.7 (linux)
+        if: matrix.platform == 'linux'
         shell: bash
         run: |
-          if command -v python2 >/dev/null 2>&1; then
-            echo "python2 found: $(command -v python2)"
-          else
-            sudo apt-get update -q
-            sudo apt-get install -y python2.7 || sudo apt-get install -y python2 || true
-          fi
-          python2 --version || /usr/bin/python2 --version || true
+          sudo apt-get update -q
+          sudo apt-get install -y python2
+          python2 --version
+
+      - name: Setup Python 2.7 (macos)
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          curl -L -o /tmp/python2.pkg https://www.python.org/ftp/python/2.7.18/python-2.7.18-macosx10.9.pkg
+          sudo installer -pkg /tmp/python2.pkg -target /
+          sudo ln -sf /Library/Frameworks/Python.framework/Versions/2.7/bin/python2.7 /usr/local/bin/python2
+          python2 --version
+
+      - name: Setup Python 2.7 (windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          curl.exe -L -o "$env:TEMP\python2.msi" https://www.python.org/ftp/python/2.7.18/python-2.7.18.amd64.msi
+          Start-Process msiexec.exe -ArgumentList "/i `"$env:TEMP\python2.msi`" /qn TARGETDIR=C:\Python27" -Wait
+          "C:\Python27" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+          & "C:\Python27\python.exe" --version
 
       - name: Init (fetch sources + work copy)
         shell: bash
         run: |
-          PY=$(command -v python2 || echo /usr/bin/python2)
-          "$PY" legacy/electron-ci/init.py
+          "${{ matrix.python }}" legacy/electron-ci/init.py
 
       - name: Build custom electron
         shell: bash
         run: |
-          PY=$(command -v python2 || echo /usr/bin/python2)
-          "$PY" legacy/electron-ci/build.py --target-arch "$TARGET_ARCH"
+          "${{ matrix.python }}" legacy/electron-ci/build.py --target-arch "$TARGET_ARCH"
 
-      - name: Upload dist
-        uses: actions/upload-artifact@v4
-        with:
-          name: custom-electron-dist-linux-${{ env.TARGET_ARCH }}
-          path: legacy/electron-ci/electron/dist
+      - name: Commit platform artifacts
+        shell: bash
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          SRC="legacy/electron-ci/electron/dist"
+          if [ ! -d "$SRC" ]; then
+            echo "no dist produced, skip commit"
+            exit 0
+          fi
+          mkdir -p "dist/${{ matrix.platform }}"
+          cp -r "$SRC/." "dist/${{ matrix.platform }}/"
+          git add "dist/${{ matrix.platform }}"
+          git commit -m "build(electron): ${{ matrix.platform }} dist artifacts (x64)"
+          for i in 1 2 3 4 5; do
+            if git pull --rebase origin "$GITHUB_REF_NAME" 2>/dev/null && git push origin "HEAD:$GITHUB_REF_NAME" 2>/dev/null; then
+              echo "artifacts pushed"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "push failed after retries"
+          exit 1
