@@ -1,0 +1,53 @@
+# Build official electron (v1.8.4 baseline) through our electron-ci pipeline.
+# Driven by legacy/electron-ci (python2, blueprint: ymmuse/electron-ci).
+# Pipeline:
+#   init.py  -> fetch sources (vendors/, full clone + submodules + LFS)
+#            -> copy work copy (electron/)
+#            -> apply patches (empty for now) + edit build args (placeholder)
+#   build.py -> bootstrap --build_release_libcc -> electron build -> create-dist
+# No automatic triggers; workflow_dispatch (manual) only.
+# Linux runner produces the Linux dist only (macOS needs macOS runner,
+# Windows needs Windows runner — no cross-build for those targets).
+
+name: Build custom electron (electron-ci, linux)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    env:
+      TARGET_ARCH: x64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 2.7
+        shell: bash
+        run: |
+          if command -v python2 >/dev/null 2>&1; then
+            echo "python2 found: $(command -v python2)"
+          else
+            sudo apt-get update -q
+            sudo apt-get install -y python2.7 || sudo apt-get install -y python2 || true
+          fi
+          python2 --version || /usr/bin/python2 --version || true
+
+      - name: Init (fetch sources + work copy)
+        shell: bash
+        run: |
+          PY=$(command -v python2 || echo /usr/bin/python2)
+          "$PY" legacy/electron-ci/init.py
+
+      - name: Build custom electron
+        shell: bash
+        run: |
+          PY=$(command -v python2 || echo /usr/bin/python2)
+          "$PY" legacy/electron-ci/build.py --target-arch "$TARGET_ARCH"
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: custom-electron-dist-linux-${{ env.TARGET_ARCH }}
+          path: legacy/electron-ci/electron/dist

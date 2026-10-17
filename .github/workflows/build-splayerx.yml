@@ -1,0 +1,53 @@
+# Build splayerx 4.9.4 on macOS (remote compile)
+# Reference: electron/electron official Actions (.github/actions/build-electron)
+# No automatic triggers; workflow_dispatch (manual) only.
+
+name: Build splayerx 4.9.4
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-splayerx-macos:
+    runs-on: macos-13
+    steps:
+      # 1. Checkout repo (splayerx source lives in legacy/chiflix-splayerx-4.9.4 via subtree)
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Node 12 to match splayerx engines (^12)
+      - name: Setup Node.js 12
+        uses: actions/setup-node@v4
+        with:
+          node-version: 12
+
+      # 3. Install dependencies (postinstall generates electron-builder config, lint fix, native deps rebuild)
+      - name: Install dependencies
+        working-directory: legacy/chiflix-splayerx-4.9.4
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: yarn install --frozen-lockfile
+
+      # 4. Build + package (checks @chiflix/electron version, webpack compile, electron-builder package)
+      - name: Build splayerx
+        working-directory: legacy/chiflix-splayerx-4.9.4
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run build
+
+      # 5. Verify output (electron-builder writes to build/ with .dmg/.zip/mac-unpacked)
+      - name: Verify build output
+        working-directory: legacy/chiflix-splayerx-4.9.4
+        run: |
+          ls -la build
+          echo "--- dmg ---"
+          ls -la build/*.dmg 2>/dev/null || true
+          echo "--- zip ---"
+          ls -la build/*.zip 2>/dev/null || true
+
+      # 6. Upload build artifacts
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: splayerx-4.9.4-dist
+          path: legacy/chiflix-splayerx-4.9.4/build

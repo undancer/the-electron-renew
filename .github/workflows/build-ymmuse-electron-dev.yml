@@ -1,0 +1,58 @@
+# Build ymmuse electron dev (dev-ymmuse branch) on multiple OS
+# Sources: legacy/ymmuse-electron-dev-ymmuse submodule (dev-ymmuse, Chromium 63)
+# Pipeline (2018 official flow):
+#   script/bootstrap.py --build_release_libcc -> libcc script bootstrap/update/build/create-dist
+#   -> script/build.py -c R -> script/create-dist.py
+# Independent from electron-ci build; no automatic triggers;
+# workflow_dispatch (manual) only.
+# Runs on macos/windows/linux in parallel (matrix) to avoid queueing on a single OS.
+
+name: Build ymmuse electron dev (dev-ymmuse)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    env:
+      TARGET_ARCH: x64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python 2.7
+        shell: bash
+        run: |
+          if command -v python2 >/dev/null 2>&1; then
+            echo "python2 found: $(command -v python2)"
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            brew install python@2 || echo "warning: brew python2 unavailable"
+          elif [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update -q && sudo apt-get install -y python2 || echo "warning: apt python2 unavailable"
+          elif [ "$RUNNER_OS" = "Windows" ]; then
+            choco install python2 -y || echo "warning: choco python2 unavailable"
+          fi
+          python2 --version || /usr/bin/python2 --version || true
+
+      - name: Build ymmuse electron dev
+        shell: bash
+        run: |
+          PY=$(command -v python2 || true)
+          [ -n "$PY" ] || PY=/usr/bin/python2
+          cd legacy/ymmuse-electron-dev-ymmuse
+          "$PY" script/bootstrap.py --target_arch=x64 --build_release_libcc -v
+          "$PY" script/build.py -c R
+          "$PY" script/create-dist.py
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: ymmuse-electron-dev-dist-${{ matrix.os }}
+          path: legacy/ymmuse-electron-dev-ymmuse/dist

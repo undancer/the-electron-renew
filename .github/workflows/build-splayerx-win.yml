@@ -1,0 +1,55 @@
+# Build splayerx 4.9.4 on Windows (remote compile)
+# npm run build dispatches to scripts/build-win.bat on win32
+#   -> gen-electron-builder-config + webpack build + electron-builder -w (default nsis)
+# No automatic triggers; workflow_dispatch (manual) only.
+
+name: Build splayerx 4.9.4 (Windows)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-splayerx-windows:
+    runs-on: windows-2022
+    steps:
+      # 1. Checkout repo (splayerx source lives in legacy/chiflix-splayerx-4.9.4 via subtree)
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Node 12 to match splayerx engines (^12)
+      - name: Setup Node.js 12
+        uses: actions/setup-node@v4
+        with:
+          node-version: 12
+
+      # 3. Install dependencies (postinstall generates electron-builder config, lint fix, native deps rebuild)
+      - name: Install dependencies
+        working-directory: legacy/chiflix-splayerx-4.9.4
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: yarn install --frozen-lockfile
+
+      # 4. Build + package (dispatches to build-win.bat; electron-builder -w default nsis target)
+      - name: Build splayerx (Windows)
+        working-directory: legacy/chiflix-splayerx-4.9.4
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run build
+
+      # 5. Verify output (electron-builder writes to build/ with nsis installer + win-unpacked)
+      - name: Verify build output
+        working-directory: legacy/chiflix-splayerx-4.9.4
+        shell: bash
+        run: |
+          ls -la build
+          echo "--- nsis installer ---"
+          ls -la build/*.exe 2>/dev/null || true
+          echo "--- unpacked ---"
+          ls -la build/win-unpacked 2>/dev/null | head -20 || true
+
+      # 6. Upload build artifacts
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: splayerx-4.9.4-dist-windows
+          path: legacy/chiflix-splayerx-4.9.4/build
