@@ -1,6 +1,6 @@
 # 本项目中的官方 electron：版本盘点、相互定位与 patches 机制考证
 
-> 更新：2026-10-17。目标：把本项目内所有官方 electron 精确锚定到官方 tag/分支
+> 更新：2026-10-18（electron-ci 基线 v1.8.4 → v4.0.0）。目标：把本项目内所有官方 electron 精确锚定到官方 tag/分支
 > （含旧日 master），并考证官方 `patches/` 目录从哪个版本开始支持。
 > 依据全部来自本地仓库对象（`git describe`、`ls-tree`、`DEPS`）与官方 release 页。
 
@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | `legacy/electron-electron-main` | **v46.0.0-nightly.20261016 之后 6 提交**（官方 main 当前 HEAD，已滚动到 46 系列） | `baccc3ffd` | 子模块，已迁出（--depth 1） |
 | `legacy/electron-electron-v7.3.3` | **v7.3.3**（精确命中 tag） | `3f2d5c217` | 子模块，已迁出（--depth 1） |
-| `legacy/electron-ci/vendors/electron` | **v1.8.4**（精确命中 tag） | `9dfb85dd` | fetch-sources.py 下载（蓝本指定版本，git 忽略不入库；本地 origin 曾为 ymmuse fork 用于对比） |
+| `legacy/electron-ci/vendors/electron` | **v4.0.0**（精确命中 tag；2026-10-18 由 v1.8.4 `9dfb85dd` 切换而来，规避 boto 删仓） | `f2d1e5fa` | fetch-sources.py git 迁出（本项目 electron-ci 基线，git 忽略不入库；蓝本原指定 v1.8.4） |
 | `legacy/ymmuse-electron-ci-develop/electron` | **v1.8.4**（同 commit `9dfb85dd`） | `9dfb85dd` | 蓝本 electron-ci 自带的子模块定义（并入登记，未迁出） |
 | 本地对象（electron-ci/vendors/electron 曾克隆对象库） | 官方 **master @ 2018-04-10 = v1.8.2-beta.3 之后 1315 提交**（2.0.0 开发线） | `6fc819dae` | 仅对象持有（非正式子模块），dev-ymmuse fork 基线 |
 
@@ -20,6 +20,7 @@
 | --- | --- | --- | --- | --- | --- |
 | main（= v46.0.0-nightly.20261016-6） | `baccc3ffd` | 2026-10-16 | 158.0.8105.0 | v24.22.0 | — |
 | v7.3.3 | `3f2d5c217` | 2020-08-25 | 78.0.3904.130 | v12.8.1 | 7.8.279.23 |
+| v4.0.0（electron-ci 基线，2026-10-18 切换） | `f2d1e5fa` | 2018-10-17 | 69.0.3497.106（DEPS 实证） | 10.11.0（官方 release） | — |
 | v1.8.4 | `9dfb85dd` | 2018-03-17（release） | 59.0.3071.115 | 8.2.1 | 5.9.211.38 |
 | 2018-04-10 master（= v1.8.2-beta.3 + 1315） | `6fc819dae` | 2018-04-10 | 63.0.3239.x（Chromium 63） | 9.7.0 | — |
 
@@ -123,8 +124,9 @@ v1.8.4 时代），而本表用于判断若升级到更新的官方 electron，�
 - **官方构建文档首次声明可用/要求 Python 3 的版本 = v19.0.0（2022-05-31，Chromium 102 / Node 16.14）**；
 - v7.3.3 ~ v18.x 全链官方要求 Python 2.7（注意：Chromium 上游实际更早移除 py2，
   electron 文档存在滞后——v19 才是文档口径的切换点）；
-- 本项目重建链锁定的官方基线为 v1.8.4/v7.3.3，均在 py2 区间，故 electron-ci 用 Python 2
-  驱动与官方口径一致（详见 docs/electron-ci.md）。
+- 本项目重建链锁定的官方基线为 v4.0.0（2026-10-18 由 v1.8.4 切换）/v7.3.3，
+  均在 py2 区间，故 electron-ci 用 Python 2 驱动与官方口径一致
+  （详见 docs/electron-ci.md）。
 
 二分法过程（低边界 v7.3.3 = py2.7，高边界 v44.8.0 = py3.9，逐 tag show 官方文档实证）：
 
@@ -293,8 +295,8 @@ v1.8.2-beta.3 (2017-11-24)  ← 相交点（共同祖先）
 | --- | --- |
 | main（v46 nightly） | 参考最新 electron（结构/API/构建链形态），用户指定 main 而非某个 release |
 | v7.3.3 | 参考——与 SPlayerX 4.9.4 实际依赖的 `@chiflix/electron@7.3.3`（npm）同版本号、同内核（Chromium 78） |
-| v1.8.4（electron-ci/vendors/electron） | **蓝本 ymmuse/electron-ci 构建链锁定的 electron 源码版本**（官方 1.8.4 + 补丁） |
-| v1.8.4（蓝本自带定义） | 与上同 commit，蓝本仓库 .gitmodules 原样并入、保留定义 |
+| v4.0.0（electron-ci/vendors/electron） | **本项目 electron-ci 构建链基线**（2026-10-18 由 v1.8.4 切换；蓝本 ymmuse/electron-ci 原锁定 v1.8.4 `9dfb85dd`，因 piotrbulinski/boto 删仓切换 v4.0.0 `f2d1e5fa`） |
+| v1.8.4（蓝本自带定义） | 蓝本仓库 .gitmodules 原样并入、保留定义（历史事实） |
 | 2018-04-10 master（6fc819dae） | dev-ymmuse fork 基线（差异对比基准，见 electron-vs-official.md） |
 
 ### 构建链归属（两条路线，均保留）
@@ -304,7 +306,9 @@ v1.8.2-beta.3 (2017-11-24)  ← 相交点（共同祖先）
 2. **dev-ymmuse 线**：官方 **2018-04-10 master**（6fc819dae）源码 + 定制
    libchromiumcontent（364cf9c6，AVI + proprietary codecs）→ 对应 `ymmuse/electron` dev-ymmuse。
 
-两者时间点不同（v1.8.4 线 vs master 2018-04 线），分别由两个 GitHub Actions workflow 打包。
+两者时间点不同（蓝本 v1.8.4 线 / 本项目 v4.0.0 线 vs master 2018-04 线）；
+本项目当前由 `build-custom-electron.yml`（workflow_dispatch，matrix linux/windows）
+打包 **v4.0.0 基线**，产物上传 GitHub Releases（不进 git）。
 
 ## 五、官方 `patches/` 目录引入考证
 

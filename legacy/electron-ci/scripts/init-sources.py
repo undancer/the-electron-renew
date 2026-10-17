@@ -23,13 +23,16 @@ def pull(url, commit, name):
 
 
 def main():
-    # 官方 electron（commit 9dfb85dd = v1.8.4，Chromium 63）
-    # ——蓝本 electron-ci 的 electron 子模块指定版本（官方，非 ymmuse 修改版）。
-    #    git 迁出保留仓库子模块机制：递归 update 自动拉取官方 libcc
-    #    （vendor/libchromiumcontent）、node、depot_tools 等（按 electron 源码
-    #    .gitmodules 锁定的版本就位），无需手动复制。
+    # 官方 electron（commit f2d1e5fa = v4.0.0）
+    # —— 基线说明：v1.8.4（蓝本 electron-ci 子模块指定版本）依赖的
+    #    vendor/libchromiumcontent 内部引用的 piotrbulinski/boto 已被 GitHub
+    #    删除，递归子模块初始化失败；v4.0.0 起 electron 不再使用
+    #    libchromiumcontent（chromium 经 DEPS/gclient 拉取），根 .gitmodules
+    #    仅 vendor/requests、vendor/boto（官方 boto/boto），不受影响。
+    #    git 迁出保留仓库子模块机制：递归 update 自动就位 .gitmodules 中
+    #    锁定的版本，无需手动复制。
     pull('https://github.com/electron/electron',
-         '9dfb85dd21bed39639144e30f3438debdf9010d2', 'electron')
+         'f2d1e5fa9e72397e74222ee37e94d08ecd1e82ef', 'electron')
 
     # 注：yaml/pyyaml 目前**不迁出**——electron 默认编译链不需要；
     #     补丁解析（patches.py）对 yaml 为惰性引入，待需要补丁时再按需追加。

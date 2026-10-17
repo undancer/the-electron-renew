@@ -1,26 +1,22 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
-"""构建定制版 electron（ymmuse AVI 链）。
+"""构建 electron（基线 v4.0.0）。
 
 蓝本：ymmuse/electron-ci（python2，GitHub Actions 用 python2 运行）。
 
 职责边界：**build.py 只负责编译链**——bootstrap → build → dist。
 源码获取、补丁应用、编译参数编辑均不在本脚本：由根目录 **init.py** 先行完成
-（init.py = 下载源码 → 应用补丁 → 编辑编译参数）。build.py 不下载、
-不操作任何 git 子模块。
+（init.py = 下载源码 → 复制工作副本 → 应用补丁 → 编辑编译参数）。
+build.py 不下载、不操作任何 git 子模块。
 
 源码落位（均 git 忽略，不入库）：
-  vendors/electron/    官方 electron base（git 迁出 9dfb85dd = v1.8.4，Chromium 63）
-                       └─ vendor/libchromiumcontent  官方 libcc（递归子模块，
-                         electron/libchromiumcontent，按 electron .gitmodules
-                         锁定版本）
+  vendors/electron/    官方 electron base（git 迁出 f2d1e5fa = v4.0.0）
   electron/            **工作副本**（init.py 从 vendors/electron 复制到 ci 根目录下；
                        补丁、编译参数、编译全部在此副本上进行，vendors/ base 保持原样）
 
 流程：
   1) 检查 electron/ 工作副本存在（不存在则退出——先跑 init.py）
-  2) electron/script/bootstrap.py --build_release_libcc
-     （驱动 vendor/libchromiumcontent 的 bootstrap/update/build/create-dist）
+  2) electron/script/bootstrap.py（官方脚本，经 DEPS/gclient 就位依赖）
   3) electron/script/build.py -c R
   4) electron/script/create-dist.py    （产物在 electron/dist）
 
@@ -46,12 +42,11 @@ def run(argv, cwd=None):
 
 
 def bootstrap_electron(target_arch):
-    """驱动 libcc 构建 + electron 构建（release）。
-    libcc 已由 electron 递归子模块就位于 vendor/libchromiumcontent。"""
+    """驱动 electron 官方 bootstrap（release）：script/bootstrap.py 按
+    electron 自带 DEPS/gclient 逻辑就位编译依赖。"""
     run([sys.executable,
          os.path.join(ELECTRON, 'script', 'bootstrap.py'),
          '--target_arch=' + target_arch,
-         '--build_release_libcc',
          '-v'],
         cwd=ELECTRON)
 
@@ -64,7 +59,7 @@ def build_electron_dist():
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Build custom electron (ymmuse AVI chain)')
+    parser = argparse.ArgumentParser(description='Build electron (baseline v4.0.0) via electron-ci')
     parser.add_argument('-t', '--target-arch', default='x64', help='Target architecture')
     parser.add_argument('--dist-only', action='store_true',
                         help='Only build electron dist, skip bootstrap')

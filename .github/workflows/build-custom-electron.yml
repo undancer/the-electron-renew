@@ -1,4 +1,4 @@
-# Build official electron (v1.8.4 baseline) through our electron-ci pipeline.
+# Build official electron (v4.0.0 baseline) through our electron-ci pipeline.
 # Driven by legacy/electron-ci (python2, blueprint: ymmuse/electron-ci).
 # Pipeline:
 #   init.py  -> fetch sources (vendors/, full clone + submodules + LFS)
@@ -7,7 +7,7 @@
 #   build.py -> bootstrap --build_release_libcc -> electron build -> create-dist
 # Multi-platform: runners run IN PARALLEL via matrix.
 # macos-13 runner was fully retired by GitHub on 2025-12-04; macOS build is
-# paused until milestone 1 (official electron v1.8.4 through our ci) is green.
+# paused until milestone 1 (official electron v4.0.0 through our ci) is green.
 # Electron cannot cross-compile: each platform's dist must be produced by its
 # own native runner. Each runner publishes ITS OWN artifacts to GitHub Releases
 # (tag per platform + run), not into git history, not a PR.
@@ -78,10 +78,10 @@ jobs:
             echo "no archive files under dist, skip publish"
             exit 0
           fi
-          TAG="electron-1.8.4-${{ matrix.platform }}-${{ github.run_id }}"
+          TAG="electron-4.0.0-${{ matrix.platform }}-${{ github.run_id }}"
           gh release create "$TAG" \
-            --title "electron 1.8.4 ${{ matrix.platform }} (run ${{ github.run_id }})" \
-            --notes "Milestone 1: official electron v1.8.4 baseline built via electron-ci on ${{ matrix.platform }} (x64)."
+            --title "electron 4.0.0 ${{ matrix.platform }} (run ${{ github.run_id }})" \
+            --notes "Milestone 1: official electron v4.0.0 baseline built via electron-ci on ${{ matrix.platform }} (x64)."
           gh release upload "$TAG" $FILES
           echo "published to release $TAG"
         env:

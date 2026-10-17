@@ -9,13 +9,13 @@ pull-repo-ref 复制出工作副本，修改都在副本上）。目录结构不
 
 对应落地：
   vendors/  下载的第三方源码 base（git 迁出，原样不动，git 忽略）
-            ├─ electron/   官方 electron 9dfb85dd（递归子模块就位官方 libcc 等）
+            ├─ electron/   官方 electron f2d1e5fa（递归子模块就位 requests/boto）
             └─ pyyaml/     yaml/pyyaml b6cbfeec（补丁解析依赖）
   electron/ ci 根目录下的工作副本（init.py 从 vendors/electron 复制而来，
             应用补丁 / 改参数 / 编译都在这；git 忽略）
-            —— 位置与蓝本 electron-ci/electron/ 一致，因此
-               patches/*/.patches.yaml 的 repo 即蓝本原文
-               electron/vendor/libchromiumcontent/...
+            —— 位置与蓝本 electron-ci/electron/ 一致，
+               patches/*/.patches.yaml 的 repo 即蓝本原文（相对 electron-ci
+               根的目标路径）
 
 职责（顺序固定，与根目录 build.py 分工：init.py 准备，build.py 编译）：
   1) 下载源码     —— scripts/init-sources.py 清单（git 迁出到 vendors/，原样）
@@ -43,8 +43,12 @@ ELECTRON_BASE = os.path.join(VENDORS, 'electron')
 # 工作副本：ci 根目录下 electron/（所有修改/编译都在这）
 ELECTRON_WORK = os.path.join(ROOT, 'electron')
 
-# electron 锁定 commit（官方 9dfb85dd = v1.8.4，蓝本 electron-ci 子模块指定版本）
-ELECTRON_COMMIT = '9dfb85dd21bed39639144e30f3438debdf9010d2'
+# electron 锁定 commit（官方 f2d1e5fa = v4.0.0）。
+# 说明：v1.8.4 依赖的 vendor/libchromiumcontent 内部引用的
+# piotrbulinski/boto 仓库已被 GitHub 删除，递归子模块初始化会失败；
+# v4.0.0 起 electron 不再使用 libchromiumcontent（chromium 经 DEPS/gclient
+# 拉取），根 .gitmodules 仅 vendor/requests、vendor/boto（官方 boto/boto）。
+ELECTRON_COMMIT = 'f2d1e5fa9e72397e74222ee37e94d08ecd1e82ef'
 
 
 def run(argv, cwd=None):
