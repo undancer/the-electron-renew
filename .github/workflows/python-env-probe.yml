@@ -45,6 +45,9 @@ jobs:
     steps:
       - name: Setup base (git for depot_tools clone / gclient sync)
         shell: bash
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          TZ: Etc/UTC
         run: |
           set -e
           apt-get update -q
@@ -53,6 +56,9 @@ jobs:
       - name: Setup python2 (optional)
         if: matrix.python2 == 'true'
         shell: bash
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          TZ: Etc/UTC
         run: |
           set -e
           apt-get install -y -q python2
@@ -63,6 +69,9 @@ jobs:
       - name: Setup python3.11 (optional)
         if: matrix.python3 == 'true'
         shell: bash
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          TZ: Etc/UTC
         run: |
           set -e
           add-apt-repository -y ppa:deadsnakes/ppa
