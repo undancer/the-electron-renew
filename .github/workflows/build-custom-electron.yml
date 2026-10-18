@@ -67,7 +67,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Init (gclient: fetch sources + official patches)
+      - name: "Init (gclient: fetch sources + official patches)"
         shell: bash
         run: |
           # python2 first in PATH: gclient's DEPS hooks are v4.0.0-era python2 scripts
