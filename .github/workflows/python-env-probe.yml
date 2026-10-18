@@ -1,0 +1,91 @@
+# Python env probe —— 实验：四种 python 环境组合下 electron-ci（v4.0.0 gclient 链）的报错实证
+#
+# 背景：v4.0.0 构建链是时代错位的混合环境——
+#   - gclient（最新 depot_tools，2026 维护）需要 **python3.11+**（enum.StrEnum）
+#   - DEPS hooks（v4.0.0 时代 2018 脚本，如 apply_all_patches.py）需要 **python2**
+#   - gn/ninja 是 C++ 二进制，不需要 python
+#   - 我们的 init.py/build.py 封装脚本为 py2（项目约束）
+#
+# 实验：同一系统（ubuntu:22.04 纯净容器，默认无 python）下四种环境，
+# 跑 init.py 看各自在哪一层报错：
+#   none      没有任何 python            -> init.py find_python3 失败（gclient 需 py3）
+#   py2-only  只有 python2               -> init.py find_python3 失败（gclient 需 py3）
+#   py3-only  只有 python3.11（python 命令也指向 py3）
+#                                      -> hooks 层失败（py2 脚本被 py3 跑 / 无 py2）
+#   both      python2 + python3.11      -> 正常走到 gclient sync（磁盘/时长失败不在此列）
+#
+# 仅 workflow_dispatch，无触发器。单系统单容器，matrix 4 个 job 并行。
+
+name: Python env probe (electron-ci)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: none
+            python2: "false"
+            python3: "false"
+          - id: py2-only
+            python2: "true"
+            python3: "false"
+          - id: py3-only
+            python2: "false"
+            python3: "true"
+          - id: both
+            python2: "true"
+            python3: "true"
+    runs-on: ubuntu-22.04
+    container: ubuntu:22.04
+    steps:
+      - name: Setup base (git for checkout / depot_tools clone)
+        shell: bash
+        run: |
+          set -e
+          apt-get update -q
+          apt-get install -y -q git ca-certificates curl software-properties-common
+
+      - name: Setup python2 (optional)
+        if: matrix.python2 == 'true'
+        shell: bash
+        run: |
+          set -e
+          apt-get install -y -q python2
+          python2 --version
+          # DEPS hooks 调 `python`，指向 py2
+          ln -sf /usr/bin/python2 /usr/local/bin/python
+
+      - name: Setup python3.11 (optional)
+        if: matrix.python3 == 'true'
+        shell: bash
+        run: |
+          set -e
+          add-apt-repository -y ppa:deadsnakes/ppa
+          apt-get update -q
+          apt-get install -y -q python3.11
+          python3.11 --version
+          # gclient 宿主：python3 指向 3.11
+          ln -sf /usr/bin/python3.11 /usr/local/bin/python3
+          # 若容器内还没有 `python`（本环境只有 py3），也让 python 指向 py3，
+          # 用于演示「py2 脚本被 py3 解释器执行」的报错（hooks 层失败）
+          if [ ! -e /usr/local/bin/python ]; then
+            ln -sf /usr/bin/python3.11 /usr/local/bin/python
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: "Probe init.py (expect python-layer failure or gclient start)"
+        shell: bash
+        run: |
+          echo "=== env: ${{ matrix.id }} ==="
+          echo "python  -> $(command -v python  || echo MISSING) $(python --version 2>&1 || true)"
+          echo "python2 -> $(command -v python2 || echo MISSING) $(python2 --version 2>&1 || true)"
+          echo "python3 -> $(command -v python3 || echo MISSING) $(python3 --version 2>&1 || true)"
+          echo "--- init.py ---"
+          # 不吞错误：4 个 job 各自标红/标绿，日志即实证
+          python2 legacy/electron-ci/init.py
