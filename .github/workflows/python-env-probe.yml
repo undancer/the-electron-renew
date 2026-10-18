@@ -1,22 +1,23 @@
-# Python env probe —— 实验：四种 python 环境组合下 electron-ci（v4.0.0 gclient 链）的报错实证
+# Python env probe —— 实验：四种 python 环境组合下，**electron v4.0.0 官方构建链
+# 自身**（不含我们的 electron-ci 封装）的报错实证
 #
 # 背景：v4.0.0 构建链是时代错位的混合环境——
 #   - gclient（最新 depot_tools，2026 维护）需要 **python3.11+**（enum.StrEnum）
 #   - DEPS hooks（v4.0.0 时代 2018 脚本，如 apply_all_patches.py）需要 **python2**
 #   - gn/ninja 是 C++ 二进制，不需要 python
-#   - 我们的 init.py/build.py 封装脚本为 py2（项目约束）
 #
 # 实验：同一系统（ubuntu:22.04 纯净容器，默认无 python）下四种环境，
-# 跑 init.py 看各自在哪一层报错：
-#   none      没有任何 python            -> init.py find_python3 失败（gclient 需 py3）
-#   py2-only  只有 python2               -> init.py find_python3 失败（gclient 需 py3）
+# 按官方 build-instructions-gn.md 流程纯迁出 electron v4.0.0 并尝试编译，
+# 看官方链各自在哪一层报错（**不使用我们的 ci，只跑官方命令序列**）：
+#   none      没有任何 python            -> gclient 无法启动（最新 depot_tools 需 py3.11）
+#   py2-only  只有 python2               -> 同上（gclient 需 py3.11）
 #   py3-only  只有 python3.11（python 命令也指向 py3）
-#                                      -> hooks 层失败（py2 脚本被 py3 跑 / 无 py2）
-#   both      python2 + python3.11      -> 正常走到 gclient sync（磁盘/时长失败不在此列）
+#                                      -> DEPS hooks 层失败（2018 py2 脚本被 py3 跑）
+#   both      python2 + python3.11      -> 正常：sync 拉到 chromium 后因磁盘不足失败
 #
 # 仅 workflow_dispatch，无触发器。单系统单容器，matrix 4 个 job 并行。
 
-name: Python env probe (electron-ci)
+name: Python env probe (electron official chain)
 
 on:
   workflow_dispatch:
@@ -42,7 +43,7 @@ jobs:
     runs-on: ubuntu-22.04
     container: ubuntu:22.04
     steps:
-      - name: Setup base (git for checkout / depot_tools clone)
+      - name: Setup base (git for depot_tools clone / gclient sync)
         shell: bash
         run: |
           set -e
@@ -76,16 +77,26 @@ jobs:
             ln -sf /usr/bin/python3.11 /usr/local/bin/python
           fi
 
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: "Probe init.py (expect python-layer failure or gclient start)"
+      - name: "Probe official chain (gclient -> gn -> ninja; no electron-ci involved)"
         shell: bash
         run: |
           echo "=== env: ${{ matrix.id }} ==="
           echo "python  -> $(command -v python  || echo MISSING) $(python --version 2>&1 || true)"
           echo "python2 -> $(command -v python2 || echo MISSING) $(python2 --version 2>&1 || true)"
           echo "python3 -> $(command -v python3 || echo MISSING) $(python3 --version 2>&1 || true)"
-          echo "--- init.py ---"
-          # 不吞错误：4 个 job 各自标红/标绿，日志即实证
-          python2 legacy/electron-ci/init.py
+
+          set -e
+          echo "--- 1. depot_tools ---"
+          git clone -q https://chromium.googlesource.com/chromium/tools/depot_tools.git
+          export PATH="$PWD/depot_tools:$PATH"
+          echo "--- 2. gclient config + sync (electron v4.0.0) ---"
+          mkdir gn-work && cd gn-work
+          gclient config --name "src/electron" --unmanaged https://github.com/electron/electron
+          gclient sync --with_branch_heads --with_tags \
+            --revision "src/electron@005264ca1f92f920ff09c91c10a3d612ac94f1d7"
+          echo "--- 3. build (gn gen + ninja) ---"
+          cd src
+          export CHROMIUM_BUILDTOOLS_PATH="$PWD/buildtools"
+          gn gen out/Release --args='import("//electron/build/args/release.gn")'
+          ninja -C out/Release electron
+          echo "PROBE-DONE"
