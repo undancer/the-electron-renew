@@ -60,7 +60,7 @@ jobs:
           Start-Process msiexec.exe -ArgumentList "/i `"$env:TEMP\python2.msi`" /qn TARGETDIR=C:\Python27" -Wait
           "C:\Python27\python.exe" --version
 
-      - name: Init (gclient: fetch sources + official patches)
+      - name: "Init (gclient: fetch sources + official patches)"
         shell: bash
         run: |
           # python2 first in PATH: gclient's DEPS hooks are v4.0.0-era python2 scripts
