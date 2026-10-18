@@ -60,7 +60,14 @@ jobs:
           Start-Process msiexec.exe -ArgumentList "/i `"$env:TEMP\python2.msi`" /qn TARGETDIR=C:\Python27" -Wait
           "C:\Python27\python.exe" --version
 
-      - name: "Init (gclient: fetch sources + official patches)"
+      - name: Setup Python 3.11 (gclient host)
+        # Latest depot_tools requires python3.11+ (enum.StrEnum);
+        # ubuntu-22.04 system python3 is 3.10 -> must install a newer one.
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Init (gclient: fetch sources + official patches)
         shell: bash
         run: |
           # python2 first in PATH: gclient's DEPS hooks are v4.0.0-era python2 scripts

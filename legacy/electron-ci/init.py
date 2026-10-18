@@ -61,11 +61,25 @@ def find_executable(name):
 
 
 def find_python3():
-    """定位 python3 解释器。gclient.py 是 python3 写的，不能用本进程(py2)跑。"""
-    for name in ('python3', 'python', 'py'):
+    """定位 python3 解释器（≥3.11）。
+
+    gclient.py 是 python3 写的，且**最新版 depot_tools 需要 python3.11+**
+    （`enum.StrEnum` 为 3.11 新增，ubuntu-22.04 系统 python3=3.10 会
+    ImportError）。用版本探测：候选命令逐个验证版本，取第一个 ≥3.11 的；
+    不能用本进程(py2)跑 gclient.py。
+    """
+    candidates = ('python3.11', 'python3.12', 'python3.13', 'python3', 'python', 'py')
+    for name in candidates:
         p = find_executable(name)
-        if p:
-            return p
+        if not p:
+            continue
+        try:
+            out = subprocess.check_output([p, '-c', 'import sys; print(sys.version_info[0], sys.version_info[1])'])
+            major, minor = (int(x) for x in out.split())
+            if (major, minor) >= (3, 11):
+                return p
+        except Exception:
+            continue
     return None
 
 
